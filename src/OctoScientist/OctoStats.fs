@@ -185,3 +185,13 @@ module OctoStats =
             |> Seq.where(fun i -> not (i.ContainsKey("pull_request")))
             |> Seq.map (this.buildIssue repoName)
 
+
+        member this.getIssuesAsync (repoName: string) (state : IssueState) =
+            async {
+                return this.getPages (this.buildIssuesByStatusRequest repoName state) 
+                    |> Async.Parallel
+                    |> Async.RunSynchronously
+                    |> Seq.collect( fun p -> this.parseIssues p.Content)
+                    |> Seq.where(fun i -> not (i.ContainsKey("pull_request")))
+                    |> Seq.map (this.buildIssue repoName)
+            }

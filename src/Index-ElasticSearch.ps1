@@ -3,22 +3,24 @@
     [string]$jsonPath 
 )
 
-$dateformat = "dd/MM/yyyy HH:mm:ss"
+$dateformat = "yyyy-MM-dd HH:mm:ss"
 $indexName = "dinoscientist_v2"
 $type = "card"
+$outfile = "cards.csv"
 
 
-if (test-path data.csv) {rm data.csv -force}
+if (test-path $outfile) {rm $outfile -force}
 
 $items = ((gc $jsonPath -raw) | convertfrom-json )
 $items.Count
 foreach($o in $items){
+    #$o
     #$o.Closed
            
     $state = $o.State
     $created = [DateTime]::ParseExact($o.Created, $dateformat, $null)
     if ($o.Closed -eq $null -or $o.Closed -eq ""){
-        $closed = ""
+        $closed = $null
     }
     else {
         $closed = [DateTime]::ParseExact($o.Closed, $dateformat, $null)
@@ -30,8 +32,8 @@ foreach($o in $items){
     
     #$id
     
-    Invoke-WebRequest -method Put -Uri "http://localhost:9200/$indexName/$type/$id"  -body ($o |convertto-json)
+    #Invoke-WebRequest -method Put -Uri "http://localhost:9200/$indexName/$type/$id"  -body ($o |convertto-json)
     
                 
-    #"{0},{1:$dateformat},{2},{3},{4}" -f $state, $created,$closed,$o._id,$o.title | ac test.csv 
+    "{0},{1},{2:$dateformat},{3:$dateformat},{4},""{5}""" -f $o.repository.Name,$state,$created,$closed,$o._id,$o.title | tee $outfile -append
 }
