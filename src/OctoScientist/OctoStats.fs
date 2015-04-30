@@ -61,6 +61,20 @@ module OctoStats =
         repository  : Repository;
     }
 
+    type PullRequest = {
+        id          : int;
+        title       : string;
+        state       : string;
+        labels      : string seq;
+        created     : DateTime;
+        closed      : DateTime option;
+        lastUpdated : DateTime;
+        merged      : DateTime option;
+        events      : Event seq option;
+        repository  : Repository;
+        //issueId     : int option;
+    }
+
     type private PageRel = 
         | Last of int
         | Other
@@ -85,26 +99,11 @@ module OctoStats =
             | false -> None         
 
         member private this.getPaginationInformation (headers:IList<Parameter>) =
-            let link = headers |> Seq.where (fun h -> h.Name = "Link") |> Seq.exactlyOne        
-            this.getLastPage link
+            headers 
+            |> Seq.tryFind (fun h -> h.Name = "Link")
+            |> Option.bind (fun (h : Parameter) -> this.getLastPage h)
+            
 
-        member this.buildIssueEventsRequest (repoName : string)  (issueId : int) =
-            fun () ->
-                let mutable request = new RestRequest();
-                request.Resource <- (sprintf "/repos/fundapps/%s/issues/%i/events" repoName issueId)
-                request.AddQueryParameter("access_token",token.Value) |>ignore
-                request.AddQueryParameter("per_page","50")  |> ignore
-                request :> IRestRequest
-
-        member this.buildIssuesByStatusRequest (repoName : string) (state : IssueState) =     
-            fun () ->
-                let mutable request = new RestRequest();
-                request.Resource <- (sprintf "/repos/fundapps/%s/issues" repoName)
-                request.AddQueryParameter("access_token",token.Value) |>ignore
-                request.AddQueryParameter("state",state.Value) |> ignore
-                request.AddQueryParameter("per_page","50")  |> ignore
-                request :> IRestRequest
-  
         member this.getPages (r : unit -> IRestRequest) : Async<Page> seq =        
             let rp = this.getResponse (r())
             seq {
@@ -124,6 +123,37 @@ module OctoStats =
                         }
             }   
 
+        member this.buildIssueEventsRequest (repoName : string)  (issueId : int) =
+            fun () ->
+                let mutable request = new RestRequest();
+                request.Resource <- (sprintf "/repos/fundapps/%s/issues/%i/events" repoName issueId)
+                request.AddQueryParameter("access_token",token.Value) |>ignore
+                request.AddQueryParameter("per_page","50")  |> ignore
+                request :> IRestRequest
+
+        member this.buildIssuesApiRequest (repoName : string) (state : IssueState) =     
+            fun () ->
+                let mutable request = new RestRequest();
+                request.Resource <- (sprintf "/repos/fundapps/%s/issues" repoName)
+                request.AddQueryParameter("access_token",token.Value) |>ignore
+                request.AddQueryParameter("state",state.Value) |> ignore
+                request.AddQueryParameter("per_page","50")  |> ignore
+                request :> IRestRequest
+
+        member this.buildPullsApiRequest (repoName : string) (state : IssueState) =     
+            fun () ->
+                let mutable request = new RestRequest();
+                request.Resource <- (sprintf "/repos/fundapps/%s/pulls" repoName)
+                request.AddQueryParameter("access_token",token.Value) |>ignore
+                request.AddQueryParameter("state",state.Value) |> ignore
+                request.AddQueryParameter("per_page","50")  |> ignore
+                request :> IRestRequest
+  
+        member this.parseContent (content : string) = 
+            //printfn "in parseContent! %s" content
+            content
+            |> JArray.Parse    
+            |> Seq.map (fun x -> (x.ToObject<Dictionary<string,obj>>()))
 
         member this.extractLabels (l:JArray) = 
             l
@@ -155,7 +185,6 @@ module OctoStats =
         member this.buildIssue (repoName : string) (rawIssue : Dictionary<string,obj>) : Issue =
             let labels =  rawIssue.Item "labels":?>JArray |> this.extractLabels
             let created = (rawIssue.Item "created_at").ToString() |> DateTime.Parse
-            let closed = (rawIssue.Item "closed_at")
             let lastUpdated = (rawIssue.Item "updated_at").ToString() |> DateTime.Parse
             let id = (rawIssue.Item "number").ToString()|>Int32.Parse
             let events = (this.getIssueEvents repoName id |> Async.RunSynchronously)
@@ -172,26 +201,42 @@ module OctoStats =
                 repository = {  Name = repoName }
                 }
 
-        member this.parseIssues (content : string) = 
-            content
-            |> JArray.Parse    
-            |> Seq.map (fun x -> (x.ToObject<Dictionary<string,obj>>()))
+        member this.parsePullRequest (repoName : string) (raw : Dictionary<string,obj>) : PullRequest =                        
+            //printfn "in parsePullRequest! %A" raw
+            {   id          = (raw.Item "number").ToString()|>Int32.Parse
+                title       = (raw.Item "title").ToString()
+                state       = (raw.Item "state").ToString()
+                labels      = []
+                created     = (raw.Item "created_at").ToString() |> DateTime.Parse
+                closed      = match raw.Item "closed_at" with | null -> None | dt -> Some(dt.ToString()|>DateTime.Parse) 
+                lastUpdated = (raw.Item "updated_at").ToString() |> DateTime.Parse
+                merged      = match raw.Item "merged_at" with | null -> None | dt -> Some(dt.ToString()|>DateTime.Parse) 
+                events      = None
+                repository  = { Name = repoName} }
 
         member this.getIssues (repoName: string) (state : IssueState) =
-            this.getPages (this.buildIssuesByStatusRequest repoName state) 
+            this.getPages (this.buildIssuesApiRequest repoName state) 
             |> Async.Parallel
             |> Async.RunSynchronously
-            |> Seq.collect( fun p -> this.parseIssues p.Content)
+            |> Seq.collect( fun p -> this.parseContent p.Content)
             |> Seq.where(fun i -> not (i.ContainsKey("pull_request")))
             |> Seq.map (this.buildIssue repoName)
 
-
-        member this.getIssuesAsync (repoName: string) (state : IssueState) =
+        member this.getIssuesAsync (repoName: string) (state : IssueState) : (Async<Issue seq>)  =
             async {
-                return this.getPages (this.buildIssuesByStatusRequest repoName state) 
+                return this.getPages (this.buildIssuesApiRequest repoName state) 
                     |> Async.Parallel
                     |> Async.RunSynchronously
-                    |> Seq.collect( fun p -> this.parseIssues p.Content)
+                    |> Seq.collect( fun p -> this.parseContent p.Content)
                     |> Seq.where(fun i -> not (i.ContainsKey("pull_request")))
                     |> Seq.map (this.buildIssue repoName)
+            }
+            
+        member this.getPullsAsync (repoName: string) (state : IssueState) : (Async<PullRequest seq>) =
+            async {
+                return this.getPages (this.buildPullsApiRequest repoName state) 
+                    |> Async.Parallel
+                    |> Async.RunSynchronously
+                    |> Seq.collect( fun p -> this.parseContent p.Content)
+                    |> Seq.map (this.parsePullRequest repoName)
             }

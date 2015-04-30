@@ -20,8 +20,8 @@ module Core =
         | "closed"                                                              -> "Done"
         | _                                                                     -> "Unknown"
 
-    type Card = {
-        _id                 : int;
+    type IssueCard = {
+        _id                 : string;
         title               : string;
         state               : string;
         processState        : string;
@@ -29,6 +29,22 @@ module Core =
         created             : string;
         closed              : string;
         lastUpdated         : string;
+        ageInDays           : string;
+        daysSinceLastUpdate : string;
+        totalHoursWorked    : string;
+        repository          : Repository;
+    }
+    
+    type PullRequestCard = {
+        _id                 : string;
+        title               : string;
+        state               : string;
+        processState        : string;
+        tags                : string seq;
+        created             : string;
+        closed              : string;
+        lastUpdated         : string;
+        merged              : string;
         ageInDays           : string;
         daysSinceLastUpdate : string;
         totalHoursWorked    : string;
@@ -68,7 +84,7 @@ module Core =
         |> Seq.map(fun x -> x.ToObject<Dictionary<string,obj>>())
         |> Seq.map(fun x->(x.Item "name").ToString())           
 
-    let public convertToCard (issue : Issue) : Card =
+    let public convertToCard (issue : Issue) : IssueCard =
         let labels =  issue.labels
         let tags   = Set.difference (labels |> Set.ofSeq) cardStates 
         let created = issue.created
@@ -88,7 +104,7 @@ module Core =
         let state = issue.state
 
         {
-            _id = id
+            _id = (sprintf "%s_%i" issue.repository.Name id)
             title = issue.title
             processState = inferState labels state
             state = state
@@ -100,5 +116,40 @@ module Core =
             closed = match closed with | None -> null | Some dt -> dt.ToString("yyyy-MM-dd HH:mm:ss")
             totalHoursWorked = match (events |> totalDaysWorked) with |None -> null | Some v -> v.ToString()
             repository = issue.repository
+            }    
+            
+    let public convertToPullRequest (pr: PullRequest) : PullRequestCard =
+        let labels =  pr.labels
+        let tags   = Set.difference (labels |> Set.ofSeq) cardStates 
+        let created = pr.created
+        let closed = pr.closed
+        let lastUpdated = pr.lastUpdated
+        let closedDt = 
+            match closed with
+            | None -> DateTime.Now
+            | Some dt -> dt
+
+        let id = pr.id
+        let events = 
+            match pr.events with
+            | Some e -> e
+            | None  -> Seq.empty<Event>
+            
+        let state = pr.state
+
+        {
+            _id = (sprintf "%s_%i" pr.repository.Name id)
+            title = pr.title
+            processState = inferState labels state
+            state = state
+            tags = tags
+            created = created.ToString("yyyy-MM-dd HH:mm:ss")
+            lastUpdated = lastUpdated.ToString("yyyy-MM-dd HH:mm:ss")            
+            ageInDays = (closedDt - created).Days.ToString()
+            daysSinceLastUpdate = (closedDt - lastUpdated).Days.ToString()
+            closed = match closed with | None -> null | Some dt -> dt.ToString("yyyy-MM-dd HH:mm:ss")
+            merged = match pr.merged with | None -> null | Some dt -> dt.ToString("yyyy-MM-dd HH:mm:ss")
+            totalHoursWorked = match (events |> totalDaysWorked) with |None -> null | Some v -> v.ToString()
+            repository = pr.repository
             }
 

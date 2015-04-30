@@ -18,17 +18,33 @@ open DinoScientist.Core;
 //////////////////////////////////////////////////////////////////////
 //  Execution
 
-let session = new GitHubApiSession(ApiToken.Token(""))
 
-let cards = 
-    IssueState.Open 
-    |> session.getIssues 
-    |> Seq.map (convertToCard)
+let repos = ["rules";"rapptr";"regulatorydata"]
 
-cards
-|> Seq.length
-|> printfn "count: %i" 
-       
-let json = cards |> JsonConvert.SerializeObject
+let issues () =     
+    repos
+    |> Seq.map(fun repo -> session.getIssuesAsync repo IssueState.All)
+    |> Async.Parallel
+    |> Async.RunSynchronously
+    |> Seq.collect (fun issues -> issues|>Seq.map(convertToCard))
 
-File.WriteAllText(@"test.json", json)
+let pulls () = 
+    repos
+    |> Seq.map(fun repo -> session.getPullsAsync repo IssueState.All)
+    |> Async.Parallel
+    |> Async.RunSynchronously
+    |> Seq.collect (fun issues -> issues|>Seq.map(convertToPullRequest))
+
+let run (cards : seq<'a>) (outfile : string) =
+    cards
+    |> Seq.length
+    |> printfn "count: %i"            
+    let json = cards |> JsonConvert.SerializeObject
+    File.WriteAllText(outfile, json)
+
+
+////////////////////////////////////////////////////////////////////
+//  Main
+
+run (issues ()) @"issues.json"
+run (pulls ()) @"pullrequests.json"
