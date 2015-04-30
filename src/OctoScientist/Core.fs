@@ -21,17 +21,18 @@ module Core =
         | _                                                                     -> "Unknown"
 
     type Card = {
-        _id     : int;
-        title   : string;
-        state   : string;
-        processState :string;
-        tags    : string seq;
-        created : string;
-        closed  : string;
-        lastUpdated : string;
-        ageInDays: string;
+        _id                 : int;
+        title               : string;
+        state               : string;
+        processState        : string;
+        tags                : string seq;
+        created             : string;
+        closed              : string;
+        lastUpdated         : string;
+        ageInDays           : string;
         daysSinceLastUpdate : string;
-        totalHoursWorked : string;
+        totalHoursWorked    : string;
+        repository          : Repository;
     }
 
     let totalDaysWorked (e : Event seq) : (float option) = 
@@ -98,5 +99,6 @@ module Core =
             daysSinceLastUpdate = (closedDt - lastUpdated).Days.ToString()
             closed = match closed with | None -> null | Some dt -> dt.ToString("yyyy-MM-dd HH:mm:ss")
             totalHoursWorked = match (events |> totalDaysWorked) with |None -> null | Some v -> v.ToString()
+            repository = issue.repository
             }
 
