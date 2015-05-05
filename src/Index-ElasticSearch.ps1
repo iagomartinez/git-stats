@@ -1,18 +1,25 @@
 ﻿Param(
     [Parameter(Mandatory=$true)]
-    [string]$jsonPath,
+    [string]$filePath,
     [Parameter(Mandatory=$true)]
-    [string]$type
+    [string]$typeName
 )
 
 $dateformat = "yyyy-MM-dd HH:mm:ss"
 $indexName = "dinoscientist"
-$outfile = "cards.csv"
+#$outfile = "cards.csv"
 
 
-if (test-path $outfile) {rm $outfile -force}
+#if (test-path $outfile) {rm $outfile -force}
 
-$items = ((gc $jsonPath -raw) | convertfrom-json )
+switch -regex ($filePath){
+    ".json$" { $items = ((gc $filePath -raw) | convertfrom-json ) }
+    ".csv$"  { $items = Import-CSV $filePath }
+    default  { throw "unknown file format!" }
+}
+
+
+write-host "{0} items found in file {1}" -f $items.Count $filePath
 
 $ids = @{}
 
@@ -33,9 +40,10 @@ foreach($o in $items) {
     "{0},{1},{2:$dateformat},{3:$dateformat},{4},""{5}""" -f $o.repository.Name,$state,$created,$closed,$o._id,$o.title | tee $outfile -append
        
 #>
+    $o
     
     $id = $o._id
-    Invoke-WebRequest -method Put -Uri "http://localhost:9200/$indexName/$type/$id"  -body ($o |convertto-json)
+    Invoke-WebRequest -method Put -Uri "http://localhost:9200/$indexName/$typeName/$id"  -body ($o |convertto-json)
     
     if ($ids.ContainsKey($id)){$ids[$id]++}
 }

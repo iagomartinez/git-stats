@@ -189,3 +189,5 @@ _Pvt_Extensions/
 ModelManifest.xml
 src/OctoScientist/packages/*
 src/OctoScientist/packages/*
+data/*
+src/test.ps1
