@@ -40,7 +40,8 @@ $mapping = @"
                },
             "totalHoursWorked" :{
                 "type":"float"
-            }
+            },
+            "firstHorizon":{"type":"string", "index":"not_analyzed"}
                
     }
     
