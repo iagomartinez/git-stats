@@ -11,9 +11,8 @@ open System.Collections.Generic
 open System.Text.RegularExpressions
 open System.IO;
 
-open DinoScientist.OctoStats;
-open DinoScientist.Core;
-
+open DinoScience.OctoStats;
+open DinoScience.Parsers;
 
 //////////////////////////////////////////////////////////////////////
 //  Execution
@@ -21,19 +20,21 @@ open DinoScientist.Core;
 
 let repos = ["rules";"rapptr";"regulatorydata"]
 
-let issues () =     
+//  TO DO: "issues" and "pulls" can probably move into Core
+
+let issues (session : GitHubApiSession) =     
     repos
     |> Seq.map(fun repo -> session.getIssuesAsync repo IssueState.All)
     |> Async.Parallel
     |> Async.RunSynchronously
-    |> Seq.collect (fun issues -> issues|>Seq.map(convertToCard))
+    |> Seq.collect (fun issues -> issues|>Seq.map(parseIssue))
 
-let pulls () = 
+let pulls (session : GitHubApiSession) = 
     repos
     |> Seq.map(fun repo -> session.getPullsAsync repo IssueState.All)
     |> Async.Parallel
     |> Async.RunSynchronously
-    |> Seq.collect (fun issues -> issues|>Seq.map(convertToPullRequest))
+    |> Seq.collect (fun issues -> issues|>Seq.map(parsePullRequest))
 
 let run (cards : seq<'a>) (outfile : string) =
     cards
@@ -45,6 +46,9 @@ let run (cards : seq<'a>) (outfile : string) =
 
 ////////////////////////////////////////////////////////////////////
 //  Main
+Environment.CurrentDirectory <- @"c:\code\git-stats\data"
 
-run (issues ()) @"issues.json"
-run (pulls ()) @"pullrequests.json"
+let session = new GitHubApiSession(ApiToken.Token "")
+
+run (issues session) "issues.json"
+run (pulls session) "pullrequests.json"
