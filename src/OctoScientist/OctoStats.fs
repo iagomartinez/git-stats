@@ -1,4 +1,4 @@
-﻿namespace DinoScientist
+﻿namespace DinoScience
 
 open RestSharp;
 open System;
@@ -18,7 +18,7 @@ module OctoStats =
     type IssueState =
         | All
         | Open
-        | Closed
+        | Closed        
 
     type IssueState with
         member this.Value = 
@@ -26,6 +26,13 @@ module OctoStats =
             | All   -> "all"
             | Open  -> "open"
             | Closed-> "closed"
+
+        static member Parse (value : string) = 
+            match value with
+            | "all" -> All
+            | "open" -> Open 
+            | "closed" -> Closed
+            | _ -> failwith ("unknown value " + value)
 
     type Page = {
         Number: int;
@@ -35,6 +42,7 @@ module OctoStats =
     type Action = 
     | Labeled
     | Unlabeled
+    | Milestoned of string
     | Other of string
 
     type Event = {
@@ -52,7 +60,7 @@ module OctoStats =
     type Issue = {
         id          : int;
         title       : string;
-        state       : string;
+        state       : IssueState;
         labels      : string seq;
         created     : DateTime;
         closed      : DateTime option;
@@ -64,15 +72,14 @@ module OctoStats =
     type PullRequest = {
         id          : int;
         title       : string;
-        state       : string;
+        state       : IssueState;
         labels      : string seq;
         created     : DateTime;
         closed      : DateTime option;
         lastUpdated : DateTime;
         merged      : DateTime option;
         events      : Event seq option;
-        repository  : Repository;
-        //issueId     : int option;
+        repository  : Repository;     
     }
 
     type private PageRel = 
@@ -150,7 +157,6 @@ module OctoStats =
                 request :> IRestRequest
   
         member this.parseContent (content : string) = 
-            //printfn "in parseContent! %s" content
             content
             |> JArray.Parse    
             |> Seq.map (fun x -> (x.ToObject<Dictionary<string,obj>>()))
@@ -161,19 +167,30 @@ module OctoStats =
             |> Seq.map(fun x->(x.Item "name").ToString())
 
         member this.buildIssueEvents (content : string) : (Event seq) = 
+            let isRelevantEvent (e : string) =
+                (e = "labeled" || e = "unlabeled" || e = "milestoned")
+            
             let labelEvents =
                 content 
                 |> JToken.Parse   
                 |> Seq.map (fun x -> (x.ToObject<Dictionary<string,obj>>()))    
-                |> Seq.where (fun i -> (i.["event"].ToString() = "labeled" || i.["event"].ToString() = "unlabeled" ))
+                |> Seq.where (fun i -> i.["event"].ToString() |> isRelevantEvent)
+
+            let extractSubfield (fields : Dictionary<string, obj>) (field : string) (subfield : string) : string =
+                if (fields.ContainsKey(field)) then
+                    ((fields.[field].ToString() |> JToken.Parse).ToObject<Dictionary<string,obj>>()).[subfield].ToString()
+                else
+                    null
+
             labelEvents
             |> Seq.map(fun i -> {   Id = i.["id"].ToString() |> Int32.Parse
                                     EventDate = i.["created_at"].ToString()
-                                    Name =((i.["label"].ToString() |> JToken.Parse).ToObject<Dictionary<string,obj>>()).["name"].ToString()
-                                    User = ((i.["actor"].ToString() |> JToken.Parse).ToObject<Dictionary<string,obj>>()).["login"].ToString()
+                                    Name = extractSubfield i "label" "name"
+                                    User = extractSubfield i "actor" "login"
                                     Action =    match i.["event"].ToString() with
                                                 | "labeled"     -> Action.Labeled
                                                 | "unlabeled"   -> Action.Unlabeled
+                                                | "milestoned"  -> Action.Milestoned (extractSubfield i "milestone" "title")
                                                 | o             -> Action.Other(o) })                 
 
         member this.getIssueEvents (repoName : string) (issueId : int) =
@@ -192,7 +209,7 @@ module OctoStats =
 
             {   id = id
                 title = (rawIssue.Item "title").ToString()
-                state = state
+                state = IssueState.Parse state
                 labels = labels
                 created = created
                 lastUpdated = lastUpdated
@@ -202,10 +219,9 @@ module OctoStats =
                 }
 
         member this.parsePullRequest (repoName : string) (raw : Dictionary<string,obj>) : PullRequest =                        
-            //printfn "in parsePullRequest! %A" raw
             {   id          = (raw.Item "number").ToString()|>Int32.Parse
                 title       = (raw.Item "title").ToString()
-                state       = (raw.Item "state").ToString()
+                state       = (raw.Item "state").ToString() |> IssueState.Parse
                 labels      = []
                 created     = (raw.Item "created_at").ToString() |> DateTime.Parse
                 closed      = match raw.Item "closed_at" with | null -> None | dt -> Some(dt.ToString()|>DateTime.Parse) 
